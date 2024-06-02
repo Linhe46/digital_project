@@ -1,1 +1,1 @@
-module timing
+module clock;
