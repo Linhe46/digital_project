@@ -315,7 +315,7 @@ assign out_time=(state == SET ? set_time : (state == ALARM ? alarm_time : idle_t
 
 //状态信息，低三位表示状态，高三位表示当前选项(仅SELECT)
 wire[5:0] state_info;
-assign state_info=(state==SELECT ? {select_state, state} : (state==ALARM ? {has_alarm, state} : IDLE));
+assign state_info=(state==SELECT ? {select_state, state} : (state==ALARM ? {modify_alarm,has_alarm, state} : IDLE));
 //数码管驱动
 seg_on my_set_on(
     .clk_sys(clk_sys),

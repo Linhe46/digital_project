@@ -75,7 +75,7 @@ always @(*)begin
             4'b1000:begin num1=12; dp1=0;end
         endcase
     end
-    else if(state_info[2:0]==ALARM&&~state_info[3])begin//ALARM的3位为has_alarm
+    else if(state_info[2:0]==ALARM&&(~state_info[3]&&~state_info[4]))begin//ALARM的3位为has_alarm,4位为modify_alarm
         num1=16;
         dp1=led_mux1==4'b0100 ? 1 :0;
     end
@@ -137,9 +137,9 @@ always @(*)begin
             dp0=0;end//STATE_NUMBER,1=IDLE,2=SET,3=ALARM,4=COUNT
     endcase
     end
-    else if(state_info[2:0]==ALARM&&~state_info[3])begin
-        num1=(led_mux0==4'b0001||led_mux0==4'b0010) ? 16 : 15;
-        dp1=led_mux0==4'b0001 ? 1 :0;
+    else if(state_info[2:0]==ALARM&&(~state_info[3]&&~state_info[4]))begin
+        num0=(led_mux0==4'b0001||led_mux0==4'b0010) ? 16 : 15;
+        dp0=led_mux0==4'b0001 ? 1 :0;
     end
     else begin
         case(led_mux0)
