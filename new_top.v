@@ -2,16 +2,12 @@ module top(
     input clk_sys,//系统时钟
     input rstn,
     input[4:0] button_in,
-    output[6:0] led0,
-    output[6:0] led1,
-    output[3:0] led_mux0,
-    output[3:0] led_mux1,
-    output dp0,
-    output dp1
+    output[6:0] led0, led1,
+    output[3:0] led_mux0, led_mux1,
+    output dp0, dp1
 );
-
-localparam mid = 2, up= 4, left= 3,right =0 , down= 1;
-localparam MID = 5'b00100, UP= 5'b10000, LEFT= 5'b01000, RIGHT= 5'b00001, DOWN= 5'b00010, NONE= 5'b00000;
+//modified
+parameter  MID = 5'b00100, UP= 5'b10000, LEFT= 5'b01000, RIGHT= 5'b00001, DOWN= 5'b00010, NONE= 5'b00000;
 parameter 
 IDLE = 3'b000, 
 SET = 3'b001, 
@@ -22,14 +18,14 @@ SELECT = 3'b100,
 FIRST = 3'B000,
 LAST = 3'B001;
 
-wire clk;
+wire clk;//计时时钟
 wire[4:0] button;
-//不同功能的时钟
-wire[19:0] out_time;
-wire[19:0] idle_time;
-//reg[19:0] idle_time;
-reg[19:0] set_time, count_time, alarm_time;
-reg[2:0] state, next_state;
+
+wire[19:0] out_time;//输出时间
+
+reg[19:0] idle_time, set_time, count_time, alarm_time;//计时/调时/秒表/闹钟时间
+
+reg[2:0] state, next_state;//状态
 
 //将系统时钟分频为1Hz
 counter_div mycounter_div(
@@ -51,7 +47,7 @@ generate
     end
 endgenerate
 
-/*计时部分*/
+/*计时各位*/
 reg[1:0] hou_h;
 reg[2:0] sec_h, min_h;
 reg[3:0] sec_l, min_l, hou_l;
@@ -77,9 +73,10 @@ always @(posedge clk or negedge rstn)begin
         sec_l<=sec_l;
 end
 //assign add_sec_l=1;
-assign add_sec=(state!=SET);//非调时均计时
+assign add_sec_l= state==SET ? 0 : 1;//非调时均计时
 assign max_sec_l=(sec_l==4'b1001);
 //秒高位
+
 always @(posedge clk or negedge rstn)begin
     if(!rstn)
         sec_h<=0;
@@ -95,8 +92,9 @@ always @(posedge clk or negedge rstn)begin
     else
         sec_h<=sec_h;
 end
+assign add_sec_h=max_sec_l&&add_sec_l;
 assign max_sec_h=(sec_h==3'b101);
-assign add_sec_h=max_sec_l;
+
 //分低位
 always @(posedge clk or negedge rstn) begin
     if(!rstn)
@@ -111,8 +109,9 @@ always @(posedge clk or negedge rstn) begin
     end
     else min_l<=min_l;
 end
-assign add_min_l=(max_sec_h&&max_sec_l);
+assign add_min_l=(max_sec_h&&add_sec_h);
 assign max_min_l=(min_l==4'b1001);
+
 //分高位
 always @(posedge clk or negedge rstn)begin
     if(!rstn)
@@ -127,8 +126,9 @@ always @(posedge clk or negedge rstn)begin
     end
     else min_h<=min_h;
 end
-assign add_min_h=(max_min_l&&max_sec_h&&max_sec_l);
+assign add_min_h=(max_min_l&&add_min_l);
 assign max_min_h=(min_h==3'b101);
+
 //时低位
 always @(posedge clk or negedge rstn)begin
     if(!rstn)
@@ -143,8 +143,9 @@ always @(posedge clk or negedge rstn)begin
     end
     else hou_l<=hou_l;
 end
-assign add_hou_l=(max_min_h&&max_min_l&&max_sec_h&&max_sec_l);
+assign add_hou_l=(max_min_h&&add_min_h);
 assign max_hou_l=(hou_l==4'b1001||hou_l==4'b0011&&hou_h==2'b10);
+
 //时高位
 always @(posedge clk or negedge rstn) begin
     if(!rstn)
@@ -159,63 +160,51 @@ always @(posedge clk or negedge rstn) begin
     end
     else hou_h<=hou_h;
 end
-assign add_hou_h=(max_hou_l&&max_min_h&&max_min_l&&max_sec_h&&max_sec_l);
+assign add_hou_h=(max_hou_l&&add_hou_l);
 assign max_hou_h=(hou_h==2'b10);
 
-assign idle_time={hou_h,hou_l,min_h,min_l,sec_h,sec_l};
 
-/*调时部分*/
-
-//状态转移
-always @(posedge clk or negedge rstn)begin
-    if(!rstn)begin
+//系统状态转移
+always @(posedge clk_sys or negedge rstn)begin
+    if(!rstn)
         state<=IDLE;
-        //select_state<=IDLE; 多驱动错误
-    end
-    else begin
+    else
         state<=next_state;
-        //select_state<=(next_state==SELECT ? select_state : next_state );多驱动
-    end
 end
 
-//保存当前状态
+//保存选项，默认为当前状态
 reg[2:0] select_state;
-always @(posedge clk or negedge rstn)begin
+always @(posedge clk_sys or negedge rstn)begin
     if(!rstn)begin
         select_state<=IDLE;
     end
     else if(state==SELECT)begin
-        if(button[left])
+        if(button==LEFT)
             select_state<=(select_state==FIRST ? LAST : select_state-1);
-        else if(button[right])
+        else if(button==RIGHT)
             select_state<=(select_state==LAST ? FIRST : select_state+1);
     end
     else select_state<=state;
 end
 
 
-
 always @(*)begin
     case(state)
         SELECT:begin
-            if(button[mid])
-                next_state=select_state;
-            /*
-            else if(button[left])
-                select_state=(select_state==FIRST ? LAST : select_state-1);
-            else if(button[right])
-                select_state=(select_state==LAST ? FIRST : select_state+1);
-            */
+            if(button==MID)
+                next_state=select_state;// 进入选定状态
             else
                 next_state=SELECT;
         end
-        SET:next_state=(button==MID ? IDLE : SET);
-        default: next_state=(button[mid] ? SELECT : state);//任意状态只有按下mid进入选择
+        SET:next_state=(button==MID ? IDLE : SET);//SET 按下mid回到 IDLE
+        default: next_state=(button==MID ? SELECT : state);//按下mid进入选择
     endcase
 end
 
+/*调时部分*/
+
 reg[2:0] set_bit;//调时的位,0-5
-always @(posedge clk or negedge rstn)begin
+always @(posedge clk_sys or negedge rstn)begin
     if(!rstn)begin
         set_time<=0;
         set_bit<=0;
@@ -231,7 +220,7 @@ always @(posedge clk or negedge rstn)begin
                     2:set_time[10:7]<=(set_time[10:7]==4'b1001 ? 0 : set_time[10:7]+1);
                     3:set_time[13:11]<=(set_time[13:11]==3'b101 ? 0 :set_time[13:11]+1);
                     4:set_time[17:14]<=(set_time[17:14]==4'b1001 ? 0 :(set_time[17:14]==4'b0011&&set_time[19:18]==2'b10 ? 0 : set_time[17:14]+1));
-                    5:set_time[19:18]<=(set_time[19:18]==2'b10 ? 0 :set_time[19:18]+1);
+                    5:set_time[19:18]<=(set_time[19:18]==2'b10 ? 0 : (set_time[19:18]==2'b01&&set_time[17:14]==4'b1001 ? 0 :set_time[19:18]+1));
                 endcase
             end
             DOWN:begin
@@ -253,7 +242,18 @@ always @(posedge clk or negedge rstn)begin
     end
 end
 
-assign out_time=(state==SET ? set_time : idle_time);
+always @(*)begin
+    if(state==SET)
+        idle_time=set_time;
+    else
+        idle_time={hou_h,hou_l,min_h,min_l,sec_h,sec_l};
+end
+
+
+//assign out_time=(state==SET ? set_time : idle_time);
+assign out_time=(state == SET ? set_time : (state == SELECT ? 114514 : idle_time));
+
+
 
 //数码管驱动
 seg_on my_set_on(
@@ -267,6 +267,5 @@ seg_on my_set_on(
     .dp0(dp0),
     .dp1(dp1)
 );
-
 
 endmodule
