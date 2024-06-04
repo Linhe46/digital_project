@@ -3,7 +3,7 @@ module counter_div(
     input rstn,
     output reg clk_div
 );
-localparam div_num = 1_0000_0000/2;//分频为1Hz，至少需要26位
+localparam div_num = 1_0000_0000/2;//��ƵΪ1Hz
 
 reg[25:0] cnt;
 always @(posedge clk or negedge rstn)begin
