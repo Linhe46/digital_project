@@ -6,7 +6,7 @@ module debounce(
     output reg button_out
 );
     reg button_reg;
-    reg[15:0]counter;
+    reg[16:0]counter;
     always@(posedge clk or negedge rstn)begin
         if(!rstn)
             counter<=0;

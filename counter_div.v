@@ -1,3 +1,4 @@
+/*计时分频模块*/
 module counter_div(
     input clk,
     input rstn,

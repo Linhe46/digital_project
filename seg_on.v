@@ -14,7 +14,7 @@ localparam
 IDLE = 3'b000, 
 SET = 3'b001, 
 ALARM = 3'b010, 
-COUNT = 3'b011, 
+TIMING = 3'b011, 
 SELECT = 3'b100;
 
 localparam
@@ -36,7 +36,10 @@ SEG_L=7'b000_1110,
 SEG_C=7'b100_1110,
 SEG_T=7'b100_0110,
 
-SEG_SLASH=7'b000_0001;
+SEG_SLASH=7'b000_0001,
+
+SEG_PAUSE=7'b110_0111,
+SEG_START=SEG_S;
 
 //分频用于循环显示
 wire led_clk;
@@ -61,6 +64,7 @@ always @(posedge led_clk or negedge rstn)begin
 end
 
 //数码管显示数字逻辑,0-9表示数字,10-14表示五个字母,15表示熄灭，16表示'-'
+//17表示暂停P，18表示持续计时S
 reg[4:0]num1;
 always @(*)begin
     if(!rstn)begin
@@ -78,6 +82,14 @@ always @(*)begin
     else if(state_info[2:0]==ALARM&&(~state_info[3]&&~state_info[4]))begin//ALARM的3位为has_alarm,4位为modify_alarm
         num1=16;
         dp1=led_mux1==4'b0100 ? 1 :0;
+    end
+    else if(state_info[2:0]==TIMING)begin
+        case(led_mux1)
+            4'b0001:begin num1=time_data[3:0];dp1=0;end
+            4'b0010:begin num1=time_data[7:4];dp1=0;end
+            4'b0100:begin num1=time_data[11:8];dp1=1;end
+            4'b1000:begin num1=time_data[14:12];dp1=0;end
+        endcase
     end
     else begin
         case(led_mux1)
@@ -132,7 +144,7 @@ always @(*)begin
                 IDLE:num0=1;
                 SET:num0=2;
                 ALARM:num0=3;
-                COUNT:num0=4;
+                TIMING:num0=4;
             endcase
             dp0=0;end//STATE_NUMBER,1=IDLE,2=SET,3=ALARM,4=COUNT
     endcase
@@ -140,6 +152,14 @@ always @(*)begin
     else if(state_info[2:0]==ALARM&&(~state_info[3]&&~state_info[4]))begin
         num0=(led_mux0==4'b0001||led_mux0==4'b0010) ? 16 : 15;
         dp0=led_mux0==4'b0001 ? 1 :0;
+    end
+    else if(state_info[2:0]==TIMING)begin
+        case(led_mux0)
+            4'b0001:begin num0=time_data[18:15];dp0=1;end
+            4'b0010:begin num0={state_info[4:3],time_data[19]};dp0=0;end
+            4'b0100:begin num0=15;dp0=0;end
+            4'b1000:begin num0=(state_info[5] ? 18 : 17);dp0=0; end
+        endcase
     end
     else begin
         case(led_mux0)
@@ -172,6 +192,8 @@ always @(*)begin
             14: led0=SEG_T;
             15: led0=SEG_OFF;
             16: led0=SEG_SLASH;
+            17: led0=SEG_PAUSE;
+            18: led0=SEG_START;
         endcase
     end
 end

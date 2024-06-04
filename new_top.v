@@ -13,18 +13,19 @@ parameter
 IDLE = 3'b000, 
 SET = 3'b001, 
 ALARM = 3'b010, 
-COUNT = 3'b011, 
+TIMING = 3'b011, 
 SELECT = 3'b100,
 
 FIRST = IDLE,
-LAST = ALARM;
+LAST = TIMING;
 
 wire clk;//计时时钟
 wire[4:0] button;
 
 wire[19:0] out_time;//输出时间
 
-reg[19:0] idle_time, set_time, count_time, alarm_time;//计时/调时/秒表/闹钟时间
+reg[19:0] idle_time, set_time, alarm_time;//计时/调时/闹钟时间
+reg[21:0] timing_time;//秒表的时间
 
 reg[2:0] state, next_state;//状态
 
@@ -48,7 +49,7 @@ generate
     end
 endgenerate
 
-/*计时各位*/
+/*计时部分*/
 reg[1:0] hou_h;
 reg[2:0] sec_h, min_h;
 reg[3:0] sec_l, min_l, hou_l;
@@ -188,7 +189,7 @@ always @(posedge clk_sys or negedge rstn)begin
     else select_state<=state;
 end
 
-
+//次态方程
 always @(*)begin
     case(state)
         SELECT:begin
@@ -199,6 +200,7 @@ always @(*)begin
         end
         SET:next_state=(button==MID ? IDLE : SET);//SET 按下mid回到 IDLE
         ALARM:next_state=(button==MID ? IDLE : ALARM);
+        TIMING:next_state=(button==MID ? IDLE : TIMING);
         default: next_state=(button==MID ? SELECT : state);//按下mid进入选择
     endcase
 end
@@ -307,15 +309,113 @@ light_on my_light_on(
     .light(light)
 );
 
+/*秒表部分*/
+//0.01s秒表时钟
+wire clk_timing;
+timing_div my_timing_div(
+    .clk_sys(clk_sys),
+    .rstn(rstn),
+    .clk_timing(clk_timing)
+);
+//秒表计时与清除信号
+reg timing_start, timing_clear;
+//22位的时钟寄存器
+reg[21:0] timing_reg;
+always @(posedge clk_sys or negedge rstn)begin
+    if(!rstn)begin
+        timing_start<=0;
+        timing_time<=0;
+        timing_clear<=0;
+    end
+    else if(state==TIMING)begin
+        case(button)
+            RIGHT: begin timing_start<=0;timing_clear<=1; end
+            LEFT: begin timing_start<=~timing_start;timing_clear<=0; end
+            MID: begin timing_start<=0;timing_clear<=1; end
+            default: begin timing_time<=timing_reg;timing_clear<=0; end
+        endcase
+    end
+end
+
+wire add_timing_csec_l, add_timing_csec_h;//厘秒
+wire add_timing_sec_l, add_timing_sec_h, add_timing_min_l, add_timing_min_h;
+
+wire max_timing_csec_l, max_timing_csec_h;
+wire max_timing_sec_l, max_timing_sec_h, max_timing_min_l, max_timing_min_h;
+always @(posedge clk_timing or posedge timing_clear or negedge rstn)begin
+    if(!rstn)
+        timing_reg<=0;
+    else if(timing_clear)
+        timing_reg<=0;
+    else if(state==TIMING)begin
+        if(add_timing_csec_l)begin
+            if(max_timing_csec_l)
+                timing_reg[3:0]<=0;
+            else timing_reg[3:0]<=timing_reg[3:0]+1;
+        end
+        if(add_timing_csec_h)begin
+            if(max_timing_csec_h)
+                timing_reg[7:4]<=0;
+            else timing_reg[7:4]<=timing_reg[7:4]+1;
+        end
+        if(add_timing_sec_l)begin
+            if(max_timing_sec_l)
+                timing_reg[11:8]<=0;
+            else timing_reg[11:8]<=timing_reg[11:8]+1;
+        end
+        if(add_timing_sec_h)begin
+            if(max_timing_sec_h)
+                timing_reg[14:12]<=0;
+            else timing_reg[14:12]<=timing_reg[14:12]+1;
+        end
+        if(add_timing_min_l)begin
+            if(max_timing_min_l)
+                timing_reg[18:15]<=0;
+            else timing_reg[18:15]<=timing_reg[18:15]+1; 
+        end
+        if(add_timing_min_h)begin
+            if(max_timing_min_h)
+                timing_reg[21:19]<=0;
+            else timing_reg[21:19]<=timing_reg[21:19]+1; 
+        end
+    end
+    else timing_reg<=timing_reg;
+end
+
+assign add_timing_csec_l=timing_start;
+assign max_timing_csec_l=timing_reg[3:0]==4'b1001;
+
+assign add_timing_csec_h=add_timing_csec_l&&max_timing_csec_l;
+assign max_timing_csec_h=timing_reg[7:4]==4'b1001;
+
+assign add_timing_sec_l=add_timing_csec_h&&max_timing_csec_h;
+assign max_timing_sec_l=timing_reg[11:8]==4'b1001;
+
+assign add_timing_sec_h=add_timing_sec_l&&max_timing_sec_l;
+assign max_timing_sec_h=timing_reg[14:12]==3'b101;
+
+assign add_timing_min_l=add_timing_sec_h&&max_timing_sec_h;
+assign max_timing_min_l=timing_reg[18:15]==4'b1001;
+
+assign add_timing_min_h=add_timing_min_l&&max_timing_min_l;
+assign max_timing_min_h=timing_reg[21:19]==3'b101;
 
 //assign out_time=(state==SET ? set_time : idle_time);
-assign out_time=(state == SET ? set_time : (state == ALARM ? alarm_time : idle_time));
+assign out_time=
+(state == SET ? set_time : 
+(state == ALARM ? alarm_time : 
+(state == TIMING ? timing_time[19:0] : idle_time)));
 
-
-
-//状态信息，低三位表示状态，高三位表示当前选项(仅SELECT)
+//状态信息
+//SELECT高三位标志选项信息(3)
+//ALARM高三位标志闹钟存在信息(2)
+//TIMING高三位补充1位状态和2位时间数据
 wire[5:0] state_info;
-assign state_info=(state==SELECT ? {select_state, state} : (state==ALARM ? {modify_alarm,has_alarm, state} : IDLE));
+assign state_info=
+(state==SELECT ? {select_state, state} : 
+(state==ALARM ? {modify_alarm,has_alarm, state} : 
+(state==TIMING ? {timing_start, timing_time[21:20], state} : IDLE)));
+
 //数码管驱动
 seg_on my_set_on(
     .clk_sys(clk_sys),
