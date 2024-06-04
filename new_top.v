@@ -4,7 +4,8 @@ module top(
     input[4:0] button_in,
     output[6:0] led0, led1,
     output[3:0] led_mux0, led_mux1,
-    output dp0, dp1
+    output dp0, dp1,
+    output[7:0] light
 );
 //modified
 parameter  MID = 5'b00100, UP= 5'b10000, LEFT= 5'b01000, RIGHT= 5'b00001, DOWN= 5'b00010, NONE= 5'b00000;
@@ -15,8 +16,8 @@ ALARM = 3'b010,
 COUNT = 3'b011, 
 SELECT = 3'b100,
 
-FIRST = 3'B000,
-LAST = 3'B001;
+FIRST = IDLE,
+LAST = ALARM;
 
 wire clk;//计时时钟
 wire[4:0] button;
@@ -197,12 +198,12 @@ always @(*)begin
                 next_state=SELECT;
         end
         SET:next_state=(button==MID ? IDLE : SET);//SET 按下mid回到 IDLE
+        ALARM:next_state=(button==MID ? IDLE : ALARM);
         default: next_state=(button==MID ? SELECT : state);//按下mid进入选择
     endcase
 end
 
 /*调时部分*/
-
 reg[2:0] set_bit;//调时的位,0-5
 always @(posedge clk_sys or negedge rstn)begin
     if(!rstn)begin
@@ -227,8 +228,8 @@ always @(posedge clk_sys or negedge rstn)begin
                 case(set_bit)
                     0:set_time[3:0]<=(set_time[3:0]==4'b0000 ? 9 :set_time[3:0]-1);
                     1:set_time[6:4]<=(set_time[6:4]==3'b000 ? 5 :set_time[6:4]-1);
-                    2:set_time[10:7]<=(set_time[10:7]==4'b0000 ? 0 : set_time[10:7]-1);
-                    3:set_time[13:11]<=(set_time[13:11]==3'b000 ? 0 :set_time[13:11]-1);
+                    2:set_time[10:7]<=(set_time[10:7]==4'b0000 ? 9 : set_time[10:7]-1);
+                    3:set_time[13:11]<=(set_time[13:11]==3'b000 ? 5 :set_time[13:11]-1);
                     4:set_time[17:14]<=(set_time[17:14]==4'b0000 ? (set_time[19:18]==2'b10 ? 3 : 9) : set_time[17:14]-1);
                     5:set_time[19:18]<=(set_time[19:18]==2'b00 ? (set_time[17:14]>3 ? 1 : 2) :set_time[19:18]-1);
                 endcase
@@ -249,16 +250,77 @@ always @(*)begin
         idle_time={hou_h,hou_l,min_h,min_l,sec_h,sec_l};
 end
 
+/*闹钟部分*/
+reg has_alarm, reach_alarm, modify_alarm;
+reg[2:0] alarm_bit;
+always @(posedge clk_sys or negedge rstn)begin
+    if(!rstn)begin
+        modify_alarm<=0;
+        has_alarm<=0;
+    end
+    else if(state==ALARM)begin
+        case(button)
+            RIGHT:begin alarm_time<=0;modify_alarm<=0;end
+            LEFT:alarm_bit<=(alarm_bit==5 ? 0 : alarm_bit+1);
+            UP:begin
+                //has_alarm<=1;
+                modify_alarm<=1;
+                case(alarm_bit)
+                    0:alarm_time[3:0]<=(alarm_time[3:0]==4'b1001 ? 0 :alarm_time[3:0]+1);
+                    1:alarm_time[6:4]<=(alarm_time[6:4]==3'b101 ? 0 :alarm_time[6:4]+1);
+                    2:alarm_time[10:7]<=(alarm_time[10:7]==4'b1001 ? 0 : alarm_time[10:7]+1);
+                    3:alarm_time[13:11]<=(alarm_time[13:11]==3'b101 ? 0 :alarm_time[13:11]+1);
+                    4:alarm_time[17:14]<=(alarm_time[17:14]==4'b1001 ? 0 :(alarm_time[17:14]==4'b0011&&alarm_time[19:18]==2'b10 ? 0 : alarm_time[17:14]+1));
+                    5:alarm_time[19:18]<=(alarm_time[19:18]==2'b10 ? 0 : (alarm_time[19:18]==2'b01&&alarm_time[17:14]==4'b1001 ? 0 :alarm_time[19:18]+1));
+                endcase
+            end
+            DOWN:begin
+                //has_alarm<=1;
+                modify_alarm<=1;
+                case(alarm_bit)
+                    0:alarm_time[3:0]<=(alarm_time[3:0]==4'b0000 ? 9 :alarm_time[3:0]-1);
+                    1:alarm_time[6:4]<=(alarm_time[6:4]==3'b000 ? 5 :alarm_time[6:4]-1);
+                    2:alarm_time[10:7]<=(alarm_time[10:7]==4'b0000 ? 9 : alarm_time[10:7]-1);
+                    3:alarm_time[13:11]<=(alarm_time[13:11]==3'b000 ? 5 :alarm_time[13:11]-1);
+                    4:alarm_time[17:14]<=(alarm_time[17:14]==4'b0000 ? (alarm_time[19:18]==2'b10 ? 3 : 9) : alarm_time[17:14]-1);
+                    5:alarm_time[19:18]<=(alarm_time[19:18]==2'b00 ? (alarm_time[17:14]>3 ? 1 : 2) :alarm_time[19:18]-1);
+                endcase
+            end
+            MID:begin has_alarm<=(modify_alarm ? 1 :0); end
+        endcase
+    end
+end
+
+always @(posedge clk_sys or negedge rstn)begin
+    if(!rstn)
+        reach_alarm<=0;
+    else if(alarm_time==idle_time&&has_alarm)//潜在的问题：调时触发闹钟？
+        reach_alarm<=1;
+    else
+        reach_alarm<=0;
+end
+
+light_on my_light_on(
+    .clk_sys(clk_sys),
+    .rstn(rstn),
+    .reach_alarm(reach_alarm),
+    .light(light)
+);
+
 
 //assign out_time=(state==SET ? set_time : idle_time);
-assign out_time=(state == SET ? set_time : (state == SELECT ? 114514 : idle_time));
+assign out_time=(state == SET ? set_time : (state == ALARM ? alarm_time : idle_time));
 
 
 
+//状态信息，低三位表示状态，高三位表示当前选项(仅SELECT)
+wire[5:0] state_info;
+assign state_info={select_state, state};
 //数码管驱动
 seg_on my_set_on(
     .clk_sys(clk_sys),
     .rstn(rstn),
+    .state_info(state_info),
     .time_data(out_time),
     .led0(led0),
     .led1(led1),

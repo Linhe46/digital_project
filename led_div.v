@@ -3,7 +3,7 @@ module led_div(
     input rstn,
     output led_clk
 );
-localparam div_num=15;
+localparam div_num=17;
 
 reg[div_num-1:0]clk_reg;
 assign led_clk=clk_reg[div_num-1];
