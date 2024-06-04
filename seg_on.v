@@ -60,8 +60,8 @@ always @(posedge led_clk or negedge rstn)begin
         led_mux0<={led_mux0[2:0],led_mux0[3]};
 end
 
-//数码管显示数字逻辑,0-9表示数字,10-14表示五个字母,15表示熄灭
-reg[3:0]num1;
+//数码管显示数字逻辑,0-9表示数字,10-14表示五个字母,15表示熄灭，16表示'-'
+reg[4:0]num1;
 always @(*)begin
     if(!rstn)begin
         num1=0;
@@ -73,7 +73,11 @@ always @(*)begin
             4'b0010:begin num1=13; dp1=0;end
             4'b0100:begin num1=11; dp1=0;end
             4'b1000:begin num1=12; dp1=0;end
-    endcase
+        endcase
+    end
+    else if(state_info[2:0]==ALARM&&~state_info[3])begin//ALARM的3位为has_alarm
+        num1=16;
+        dp1=led_mux1==4'b0100 ? 1 :0;
     end
     else begin
         case(led_mux1)
@@ -106,12 +110,13 @@ always @(*)begin
             13: led1=SEG_C;
             14: led1=SEG_T;
             15: led1=SEG_OFF;
+            16: led1=SEG_SLASH;
         endcase
     end
 end
 
 
-reg[3:0]num0;
+reg[4:0]num0;
 always @(*)begin
     if(!rstn)begin
         num0=0;
@@ -132,12 +137,16 @@ always @(*)begin
             dp0=0;end//STATE_NUMBER,1=IDLE,2=SET,3=ALARM,4=COUNT
     endcase
     end
+    else if(state_info[2:0]==ALARM&&~state_info[3])begin
+        num1=(led_mux0==4'b0001||led_mux0==4'b0010) ? 16 : 15;
+        dp1=led_mux0==4'b0001 ? 1 :0;
+    end
     else begin
-    case(led_mux0)
-        4'b0001:begin num0=time_data[17:14];dp0=1;end
-        4'b0010:begin num0=time_data[19:18];dp0=0;end
-        default:begin num0=15;dp0=0;end
-    endcase
+        case(led_mux0)
+            4'b0001:begin num0=time_data[17:14];dp0=1;end
+            4'b0010:begin num0=time_data[19:18];dp0=0;end
+            default:begin num0=15;dp0=0;end
+        endcase
     end
 end
 
@@ -162,6 +171,7 @@ always @(*)begin
             13: led0=SEG_C;
             14: led0=SEG_T;
             15: led0=SEG_OFF;
+            16: led0=SEG_SLASH;
         endcase
     end
 end
